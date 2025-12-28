@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111111" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Hardy Health Tracker</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; background:#0b0b0b; color:#f5f5f5; }
+    header { padding: 16px; background:#111; position: sticky; top: 0; border-bottom: 1px solid #222; }
+    h1 { font-size: 18px; margin: 0 0 6px 0; }
+    .sub { font-size: 12px; color:#bdbdbd; }
+    main { padding: 16px; max-width: 760px; margin: 0 auto; }
+    .card { background:#121212; border:1px solid #232323; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+    .row { display:flex; gap: 10px; flex-wrap: wrap; align-items:center; }
+    label { display:flex; align-items:center; gap: 10px; padding: 10px; border-radius: 10px; background:#171717; border:1px solid #252525; width: 100%; box-sizing: border-box; }
+    input[type="checkbox"] { width: 20px; height: 20px; }
+    input[type="number"], textarea {
+      width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px;
+      border:1px solid #252525; background:#0f0f0f; color:#f5f5f5;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    button {
+      padding: 10px 12px; border-radius: 10px; border:1px solid #2a2a2a;
+      background:#1a1a1a; color:#f5f5f5; cursor:pointer;
+    }
+    button.primary { background:#2b2b2b; border-color:#3a3a3a; }
+    .small { font-size: 12px; color:#bdbdbd; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    .pill { display:inline-block; padding: 6px 10px; border-radius: 999px; background:#1b1b1b; border:1px solid #262626; font-size: 12px; color:#d8d8d8; }
+    ul { margin: 8px 0 0 18px; padding: 0; }
+  </style>
+</head>
+
+<body onload="initApp()">
+  <header>
+    <h1>Hardy Health Tracker</h1>
+    <div class="sub" id="todayLine">Loading…</div>
+    <div class="sub" id="jsStatus">JS status: starting…</div>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="row" style="justify-content: space-between; width:100%;">
+        <div>
+          <span class="pill" id="streakPill">Streak: 0 days</span>
+          <div class="small" style="margin-top:8px;">Keystone: move after work before you sit.</div>
+        </div>
+        <div class="row" style="gap:8px;">
+          <button class="primary" onclick="saveToday()">Save</button>
+          <button onclick="resetToday()">Reset Today</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px; margin:0 0 10px 0;">Daily Wins</h2>
+      <div class="grid">
+        <label><input id="moveBeforeSit" type="checkbox" /> Move before sitting (after work)</label>
+        <label><input id="proteinDinner" type="checkbox" /> Protein at dinner</label>
+        <label><input id="plannedSnack" type="checkbox" /> Planned night snack (intentional)</label>
+        <label><input id="walkBike" type="checkbox" /> Walk or easy bike (20 to 30 min)</label>
+        <label><input id="drums" type="checkbox" /> Drums session (20+ min)</label>
+        <label><input id="strength" type="checkbox" /> Strength session (short)</label>
+      </div>
+      <p class="small" style="margin:10px 0 0 0;">Strength target is 2 days per week. Keep it short.</p>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px; margin:0 0 10px 0;">Check-in</h2>
+      <div class="grid">
+        <div>
+          <div class="small" style="margin-bottom:6px;">Stress (1 to 10)</div>
+          <input id="stress" type="number" min="1" max="10" placeholder="Example: 8" />
+        </div>
+        <div>
+          <div class="small" style="margin-bottom:6px;">Weight (optional)</div>
+          <input id="weight" type="number" step="0.1" placeholder="Example: 215.4" />
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="small" style="margin-bottom:6px;">Notes</div>
+        <textarea id="notes" placeholder="Example: tough day, walked anyway. cravings lower after protein dinner."></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px; margin:0 0 10px 0;">Weekly Summary</h2>
+      <div id="weeklySummary" class="small">Loading…</div>
+      <div class="row" style="margin-top: 12px; gap: 8px;">
+        <button onclick="exportData()">Export Data (JSON)</button>
+        <button onclick="clearAll()">Clear All Data</button>
+      </div>
+      <p class="small" style="margin:10px 0 0 0;">Data is stored on your phone (local storage).</p>
+    </div>
+  </main>
+
+<script>
+  const KEY = "hardy_health_tracker_v2";
+
+  function todayKey() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function loadAll() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; }
+    catch { return {}; }
+  }
+
+  function saveAll(all) {
+    localStorage.setItem(KEY, JSON.stringify(all));
+  }
+
+  function defaultDay() {
+    return {
+      moveBeforeSit:false,
+      proteinDinner:false,
+      plannedSnack:false,
+      walkBike:false,
+      drums:false,
+      strength:false,
+      stress:"",
+      weight:"",
+      notes:""
+    };
+  }
+
+  function readUI() {
+    return {
+      moveBeforeSit: document.getElementById("moveBeforeSit").checked,
+      proteinDinner: document.getElementById("proteinDinner").checked,
+      plannedSnack: document.getElementById("plannedSnack").checked,
+      walkBike: document.getElementById("walkBike").checked,
+      drums: document.getElementById("drums").checked,
+      strength: document.getElementById("strength").checked,
+      stress: document.getElementById("stress").value,
+      weight: document.getElementById("weight").value,
+      notes: document.getElementById("notes").value
+    };
+  }
+
+  function setUI(v) {
+    document.getElementById("moveBeforeSit").checked = !!v.moveBeforeSit;
+    document.getElementById("proteinDinner").checked = !!v.proteinDinner;
+    document.getElementById("plannedSnack").checked = !!v.plannedSnack;
+    document.getElementById("walkBike").checked = !!v.walkBike;
+    document.getElementById("drums").checked = !!v.drums;
+    document.getElementById("strength").checked = !!v.strength;
+    document.getElementById("stress").value = v.stress ?? "";
+    document.getElementById("weight").value = v.weight ?? "";
+    document.getElementById("notes").value = v.notes ?? "";
+  }
+
+  function calcStreak(all) {
+    let streak = 0;
+    let expected = new Date();
+    for (;;) {
+      const y = expected.getFullYear();
+      const m = String(expected.getMonth() + 1).padStart(2, "0");
+      const day = String(expected.getDate()).padStart(2, "0");
+      const k = `${y}-${m}-${day}`;
+      const v = all[k];
+      if (!v || !v.moveBeforeSit) break;
+      streak++;
+      expected.setDate(expected.getDate() - 1);
+    }
+    return streak;
+  }
+
+  function renderWeekly(all) {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const k = `${y}-${m}-${day}`;
+      days.push(all[k] || null);
+    }
+
+    const count = (field) => days.reduce((a, v) => a + (v && v[field] ? 1 : 0), 0);
+    const stressVals = days.map(v => v && v.stress !== "" ? Number(v.stress) : null).filter(x => Number.isFinite(x));
+    const avgStress = stressVals.length ? (stressVals.reduce((a,b)=>a+b,0)/stressVals.length).toFixed(1) : "n/a";
+
+    const html = `
+      <div><strong>Last 7 days</strong></div>
+      <ul>
+        <li>Move before sitting: <strong>${count("moveBeforeSit")}/7</strong></li>
+        <li>Protein at dinner: <strong>${count("proteinDinner")}/7</strong></li>
+        <li>Planned night snack: <strong>${count("plannedSnack")}/7</strong></li>
+        <li>Walk or easy bike: <strong>${count("walkBike")}/7</strong></li>
+        <li>Drums: <strong>${count("drums")}/7</strong></li>
+        <li>Strength sessions: <strong>${count("strength")}/7</strong> (target 2)</li>
+        <li>Average stress: <strong>${avgStress}</strong></li>
+      </ul>
+    `;
+    document.getElementById("weeklySummary").innerHTML = html;
+    document.getElementById("streakPill").textContent = `Streak: ${calcStreak(all)} days`;
+  }
+
+  function initApp() {
+    const d = new Date();
+    document.getElementById("todayLine").textContent = d.toLocaleDateString(undefined, { weekday:"long", year:"numeric", month:"long", day:"numeric" });
+
+    // Visible proof JS is running
+    document.getElementById("jsStatus").textContent = "JS status: running ✅";
+
+    const all = loadAll();
+    const today = all[todayKey()] || defaultDay();
+    setUI(today);
+    renderWeekly(all);
+  }
+
+  function saveToday() {
+    const all = loadAll();
+    all[todayKey()] = readUI();
+    saveAll(all);
+    renderWeekly(all);
+    alert("Saved.");
+  }
+
+  function resetToday() {
+    const all = loadAll();
+    delete all[todayKey()];
+    saveAll(all);
+    setUI(defaultDay());
+    renderWeekly(all);
+    alert("Reset.");
+  }
+
+  function exportData() {
+    const all = loadAll();
+    const blob = new Blob([JSON.stringify(all, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hardy-health-tracker-data.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function clearAll() {
+    if (!confirm("This deletes all saved data. Are you sure?")) return;
+    localStorage.removeItem(KEY);
+    setUI(defaultDay());
+    renderWeekly(loadAll());
+    alert("Cleared.");
+  }
+</script>
+
+</body>
+</html>
